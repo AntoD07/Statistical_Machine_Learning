@@ -1,13 +1,15 @@
 import numpy as np
 import torch
 import scipy
-import util
+#import util
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from absl import flags
+
 FLAGS = flags.FLAGS
+
 
 def get_distributed_review_embeddings(data, vectorizer, embeddings):
     tf_idf_rep = get_tf_idf_review_embeddings(data, vectorizer)
@@ -41,7 +43,7 @@ def get_tf_idf_vectorizer(data, vocabulary):
 
     return vectorizer
 
-def get_weight_matrix(X1, X2, t=0.03):
+def get_weight_matrix(X1, X2, t= 0.03):
     """T is a temperature parameter, which is fixed to 0.03 in the paper
     (but actually should be a hyper-parameter)"""
     cosine_sim = cosine_similarity(X1, X2, True)
@@ -59,11 +61,35 @@ def get_weight_matrix(X1, X2, t=0.03):
     dist = np.exp(dist)
     return dist
 
+
+def labelize1(D_uu, W_uu, W_ul, labeled_nodes):
+    
+    #Version 1 :
+    Lapl = D_uu - W_uu
+    Green = np.linalg.inv(Lapl)
+    
+    return Green @ W_ul @ labeled_nodes
+    
+def labelize2(D_uu, W_uu, W_ul, labeled_nodes):    
+    #Version 2 computing matrix P
+    
+    p_uu = np.linalg.inv(D_uu)@ W_uu
+    p_ul = np.linalg.inv(D_uu)@ W_ul
+    mat = np.eye(len(p_uu))- p_uu
+   # print("Size of (I - Puu) matrix : ", np.shape(mat))
+   # print("Rank of (I - Puu) matrix : ", np.linalg.matrix_rank(mat))
+    mat_inv = np.linalg.inv(mat)
+   # print(mat_inv)
+    
+    return mat_inv@p_ul@labeled_nodes
+
+    
+
 def visualize_top_k(embs, data, idx=0, k=3):
     X1, X2 = embs
     data1, data2 = data
 
-    w = util.get_weight_matrix(X1, X2)
+    w = get_weight_matrix(X1, X2)
     distances = w[idx]
 
     top_k = np.argsort(distances, -1)[-k:][::-1]
