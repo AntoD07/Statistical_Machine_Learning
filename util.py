@@ -66,10 +66,8 @@ def get_weight_matrix(X1, X2, t= 0.03):
 
 
 def labelize1(D_uu, W_uu, W_ul, labeled_nodes):
-    epsilon = 5e-4
     #Version 1 :
     Lapl = D_uu - W_uu
-    Lapl = epsilon*np.ones(np.shape(Lapl))+ (1-epsilon)*Lapl
     Green = np.linalg.inv(Lapl)
     
     return Green @ W_ul @ labeled_nodes
@@ -80,17 +78,17 @@ def labelize2(D_uu, W_uu, W_ul, labeled_nodes):
     p_uu = np.linalg.inv(D_uu)@ W_uu
     p_ul = np.linalg.inv(D_uu)@ W_ul
     mat = np.eye(len(p_uu))- p_uu
-    #print("Size of (I - Puu) matrix : ", np.shape(mat))
-    #print("Rank of (I - Puu) matrix : ", np.linalg.matrix_rank(mat))
+    print("Size of (I - Puu) matrix : ", np.shape(mat))
+    print("Rank of (I - Puu) matrix : ", np.linalg.matrix_rank(mat))
     mat_inv = np.linalg.inv(mat)
-   # print(mat_inv)
     
     return mat_inv@p_ul@labeled_nodes
+
 def accuracy(prediction, true_value, number_labeled):
     prediction = prediction[number_labeled:]
     true_value = true_value[number_labeled:]
     N = len(true_value)
-    print("Number of nodes to predict :", N)
+    ("Number of nodes to predict :", N)
     assert(len(prediction)==len(true_value))
     counter = 0
     return N**-1*np.sum([prediction[i] == true_value[i] for i in range(N)])
@@ -101,12 +99,10 @@ def prediction(X_l, X_u, labeled_out, groundtruth):
     print("number of unkown nodes : ", X_u.shape[0])
     n_l = X_l.shape[0]
     print("number of known nodes : ", X_l.shape[0])
-    X_l = X_l.toarray()
+    X_l = X_l.toarray() #getting rid of the sparse representation
     X_u = X_u.toarray()
-   # X = scipy.sparse.vstack((X_l, X_u), format='csr')
     X = np.concatenate((X_l,X_u)) 
     scale_vector = np.var(X, axis=0)
-    #print(X.shape[0])
     print("Shape of X data regrouping labeled and unlabeled: ", np.shape(X))
     a = np.full(n_u, -1)
     y = np.concatenate((np.array(labeled_out), a), axis = 0)

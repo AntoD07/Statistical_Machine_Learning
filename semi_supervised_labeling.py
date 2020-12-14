@@ -44,7 +44,7 @@ def _main():
 
     # train idf model from the labeled training set COULD ALSO BE TRAINED ON THE ENTIRE DATA..
     #vectorizer = util.get_tf_idf_vectorizer(train_data[0], embeddings.stoi)
-    vectorizer = util.get_tf_idf_vectorizer(data, embeddings.stoi)
+    vectorizer = util.get_tf_idf_vectorizer(train_data[1], embeddings.stoi)
 
     # # TF-IDF feature_matrices
     train_X_l= util.get_tf_idf_review_embeddings(train_data[0], vectorizer)
@@ -67,11 +67,11 @@ def _main():
 
     labeled_nodes = np.array(train_data[0]['label'])
     labs1 = util.labelize1(d_uu, w_uu, w_ul, labeled_nodes)
-   # print(labs1)
+    print(labs1)
     
     labs2 = util.labelize2(d_uu, w_uu, w_ul, labeled_nodes)
     #print(labs2)
-   # print(droped_labels)
+    print(np.array(droped_labels))
     
    # print(labs)    
     
@@ -85,5 +85,5 @@ def main(args):
         print("")
 
 if __name__ == '__main__':
-    FLAGS.debug = False
+    FLAGS.debug = True
     app.run(main)
