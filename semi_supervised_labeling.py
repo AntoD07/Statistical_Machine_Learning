@@ -36,41 +36,41 @@ def _main():
         assert(train_data[0].equals(train_data2[0]) and train_data[1].equals(train_data2[1]))
         assert(test_data.equals(test_data2))
 
-    
-    print(train_data[0]['label'])
-    print(train_data[1])
+ 
     
     # get word embeddings
     embeddings = torchtext.vocab.GloVe(name="6B", dim=FLAGS.word_emb_dims, max_vectors=FLAGS.vocabulary_size)
     #Gets the embedding from Glove trained on the web (for max_vectors number of words)
 
     # train idf model from the labeled training set COULD ALSO BE TRAINED ON THE ENTIRE DATA..
-    vectorizer = util.get_tf_idf_vectorizer(train_data[0], embeddings.stoi)
+    #vectorizer = util.get_tf_idf_vectorizer(train_data[0], embeddings.stoi)
+    vectorizer = util.get_tf_idf_vectorizer(data, embeddings.stoi)
 
     # # TF-IDF feature_matrices
     train_X_l= util.get_tf_idf_review_embeddings(train_data[0], vectorizer)
     train_X_u= util.get_tf_idf_review_embeddings(train_data[1], vectorizer)
     test_X = util.get_tf_idf_review_embeddings(test_data, vectorizer)
-
+    labeled_nodes = np.array(train_data[0]['label'])
+    util.prediction(train_X_l, train_X_u, labeled_nodes, droped_labels)
+    
     # Word Embedding feature matrices
-    # train_X = util.get_distributed_review_embeddings(train_data[0], vectorizer, embeddings)
-    # test_X = util.get_distributed_review_embeddings(test_data, vectorizer, embeddings)
+    #train_X_l = util.get_distributed_review_embeddings(train_data[0], vectorizer, embeddings)
+    #train_X_u = util.get_distributed_review_embeddings(train_data[1], vectorizer, embeddings)
+    #test_X = util.get_distributed_review_embeddings(test_data, vectorizer, embeddings)
 
     w_lu = util.get_weight_matrix(train_X_l, train_X_u)
-    #print(w_lu)
     w_ll = util.get_weight_matrix(train_X_l, train_X_l)
     w_ul = util.get_weight_matrix(train_X_u, train_X_l)
     
     w_uu = util.get_weight_matrix(train_X_u, train_X_u)
-    d_uu = np.diag(np.sum(w_uu, axis=0))
+    d_uu = np.diag(np.sum(w_uu, axis=1))
 
     labeled_nodes = np.array(train_data[0]['label'])
-    #print(labeled_nodes)
     labs1 = util.labelize1(d_uu, w_uu, w_ul, labeled_nodes)
-    print(labs1)
+   # print(labs1)
     
     labs2 = util.labelize2(d_uu, w_uu, w_ul, labeled_nodes)
-    print(labs2)
+    #print(labs2)
    # print(droped_labels)
     
    # print(labs)    
@@ -79,11 +79,11 @@ def _main():
    # util.visualize_top_k((test_X, train_X_l), (test_data, train_data[0]))
 
 def main(args):
-    for pld in [0.5]:
+    for pld in [0.3]:
         FLAGS.portion_of_labeled_training_data = pld
         _main()
         print("")
 
 if __name__ == '__main__':
-    FLAGS.debug = True
+    FLAGS.debug = False
     app.run(main)
