@@ -1,5 +1,6 @@
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier
 
 import torchtext
 import data_module
@@ -7,17 +8,15 @@ import util
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
-import scipy as sp
-
 
 from absl import app, flags
 
-      
 flags.DEFINE_boolean('debug', True, 'debug')
 
 flags.DEFINE_float('portion_of_positive_samples', 0.5, 'portion_of_positive_samples')
 flags.DEFINE_float('portion_of_labeled_training_data', 1.0, 'portion_of_labeled_training_data')
-flags.DEFINE_float('temperature', 0.03, 'temperature')
+flags.DEFINE_float('temperature', 0.04, 'temperature')
+flags.DEFINE_float('eta', 0.5, 'external classifiers weights')
 
 flags.DEFINE_integer('n_test_samples', 2000, 'n_test_samples')
 flags.DEFINE_integer('n_train_samples', 5000, 'n_train_samples')
@@ -31,6 +30,7 @@ flags.DEFINE_integer('random_seed', 111, 'random_seed')
 flags.DEFINE_boolean('add_unlabeled_data', True, 'add_unlabeled_data')
 
 FLAGS = flags.FLAGS
+
 
 def get_embeddings(train_data, test_data):
     labeled_train_data, unlabeled_train_data = train_data
@@ -54,6 +54,7 @@ def get_embeddings(train_data, test_data):
 
     return labeled_train_X, unlabeled_train_X, test_X
 
+
 def construct_W(labeled_train_X, unlabeled_train_X, test_X):
     if FLAGS.add_unlabeled_data and not ((unlabeled_train_X is None) or len(unlabeled_train_X) == 0):
         if type(unlabeled_train_X) == sp.sparse.csr_matrix:
@@ -71,7 +72,14 @@ def construct_W(labeled_train_X, unlabeled_train_X, test_X):
     return W
 
 
-def train_and_evaluate_lp(train_data, test_data):
+def train_random_forest_classifier(train_X, train_Y):
+    clf_rf = RandomForestClassifier()
+    clf_rf.fit(train_X, train_Y)
+
+    return clf_rf
+
+
+def train_and_evaluate_joint_classifier(train_data, test_data, eta):
     labeled_train_X, unlabeled_train_X, test_X = get_embeddings(train_data, test_data)
     test_Y = test_data['label']
 
@@ -82,18 +90,32 @@ def train_and_evaluate_lp(train_data, test_data):
     n = W.shape[0]
 
     fl = np.reshape(np.array(train_data[0]['label']), (-1, 1))
-    L = np.diag(W.sum(axis=0)) - W
+    L = np.diag(W.sum(axis=0)) - (1 - eta) * W
 
     # the harmonic function.
     Lu_factor = sp.linalg.cho_factor(L[l:, l:])
-    fu = -sp.linalg.cho_solve(Lu_factor, L[l:, :l].dot(fl))
+
+    fu_inter = - sp.linalg.cho_solve(Lu_factor, L[l:, :l].dot(fl))
+    fu_inter = np.reshape(fu_inter, (-1))[-t:]
+
+    # factoring in the predictions from the external classifier
+    clf_ext = train_random_forest_classifier(labeled_train_X, train_data[0]['label'])
+    if FLAGS.add_unlabeled_data and not ((unlabeled_train_X is None) or len(unlabeled_train_X) == 0):
+        if type(unlabeled_train_X) == sp.sparse.csr_matrix:
+            test_X = sp.sparse.vstack([unlabeled_train_X, test_X])
+        else:
+            test_X = np.concatenate([unlabeled_train_X, test_X], axis=0)
+
+    fu_hat = clf_ext.predict(test_X)
+    fu_inter2 = sp.linalg.cho_solve(Lu_factor, np.multiply(W.sum(axis=0)[l:], fu_hat))
+    fu_inter2 = np.reshape(fu_inter2, (-1))[-t:]
+
+    fu = (1 - eta) * fu_inter + eta * fu_inter2
 
     fu[fu >= 1 / 2] = 1
     fu[fu < 1 / 2] = 0
 
-    fu = np.reshape(fu, (-1))
     y_pred = fu[-t:]
-
     acc = round(accuracy_score(test_Y, y_pred) * 100, 4)
 
     return acc
@@ -109,9 +131,10 @@ def _main():
 
     if FLAGS.debug:
         # Test reproducibility
-        train_data2, test_data2, droped_labels2 = data_module.get_train_test_split(data, verbose=False, random_seed=FLAGS.random_seed)
-        assert(train_data[0].equals(train_data2[0]) and train_data[1].equals(train_data2[1]))
-        assert(test_data.equals(test_data2))
+        train_data2, test_data2, droped_labels2 = data_module.get_train_test_split(data, verbose=False,
+                                                                                   random_seed=FLAGS.random_seed)
+        assert (train_data[0].equals(train_data2[0]) and train_data[1].equals(train_data2[1]))
+        assert (test_data.equals(test_data2))
 
     # Perform stratified K-Fold cross-validation
     val_accs = []
@@ -123,15 +146,16 @@ def _main():
         temp_train_data = (temp_labeled_train_data, unlabeled_train_data)
         temp_test_data = train_data[0].iloc[test_index]
 
-        val_acc = train_and_evaluate_lp(temp_train_data, temp_test_data)
+        val_acc = train_and_evaluate_joint_classifier(temp_train_data, temp_test_data, eta=FLAGS.eta)
         val_accs.append(val_acc)
 
     val_acc = np.mean(val_accs)
     val_acc_std = round(np.std(val_accs), 4)
     val_acc = round(val_acc, 4)
-    test_acc = train_and_evaluate_lp(train_data, test_data)
+    test_acc = train_and_evaluate_joint_classifier(train_data, test_data, eta=FLAGS.eta)
 
-    print("Accuracy ({} features): val -> {} % (+- {}), test -> {} %".format('TF-IDF' if FLAGS.emb_method == 'tfidf' else 'GloVe', val_acc, val_acc_std, test_acc))
+    print("Accuracy ({} features): val -> {} % (+- {}), test -> {} %".format(
+        'TF-IDF' if FLAGS.emb_method == 'tfidf' else 'GloVe', val_acc, val_acc_std, test_acc))
 
     return val_acc, test_acc
 
@@ -139,17 +163,18 @@ def _main():
 def main(args):
     FLAGS.emb_method = 'tfidf'
 
-    plds = np.linspace(0.4, 1.0, 4)
-    # plds = [1.0, 0.4]
-    temps = np.logspace(-2, 0, 15)
-    random_seeds = [111, 12345, 5, 135, 999]
-    # random_seeds = [111, 12345]
+    # plds = np.linspace(0.4, 1.0, 4)
+    plds = [1]
+    etas = np.linspace(0.0, 1.0, 6)
+    # etas = [0.5]
+    # random_seeds = [111, 12345, 5, 135, 999]
+    random_seeds = [111, 12345, 5]
 
     rows = 2
     cols = 2
 
     fig, axs = plt.subplots(rows, cols, sharey=True, figsize=(cols * 3.5 + (cols - 1) * 0.1,
-                                                                           rows * 3 + (rows - 1) * 0.1)
+                                                              rows * 3 + (rows - 1) * 0.1)
                             )
     if cols == 1 and rows == 1:
         axs = [axs]
@@ -169,8 +194,8 @@ def main(args):
             val_accs = []
             test_accs = []
 
-            for temp in temps:
-                FLAGS.temperature = temp
+            for eta in etas:
+                FLAGS.eta = eta
                 val_acc, test_acc = _main()
 
                 val_accs.append(val_acc)
@@ -187,28 +212,27 @@ def main(args):
         test_accs_mean = np.mean(test_accs, axis=0)
         test_accs_std = np.std(test_accs, axis=0)
 
-        ax.set_xlabel('Temperature')
-        ax.set_xscale('log')
+        ax.set_xlabel('Eta')
         ax.set_ylabel('Accuracy')
         ax.set_title(f'{int(pld * 100)}% labeled data')
 
         if idx == (cols - 1):
-            ax.errorbar(temps, val_accs_mean, val_accs_std, label='5-fold CV accuracy')
-            ax.errorbar(temps, test_accs_mean, test_accs_std, label='Test set accuracy')
+            ax.errorbar(etas, val_accs_mean, val_accs_std, label='5-fold CV accuracy')
+            ax.errorbar(etas, test_accs_mean, test_accs_std, label='Test set accuracy')
         else:
-            ax.errorbar(temps, val_accs_mean, val_accs_std)
-            ax.errorbar(temps, test_accs_mean, test_accs_std)
+            ax.errorbar(etas, val_accs_mean, val_accs_std)
+            ax.errorbar(etas, test_accs_mean, test_accs_std)
 
-        ax.scatter(temps, val_accs_mean, color='black', marker='x')
-        ax.scatter(temps, test_accs_mean, color='black', marker='x')
+        ax.scatter(etas, val_accs_mean, color='black', marker='x')
+        ax.scatter(etas, test_accs_mean, color='black', marker='x')
 
-    handles, labels = axs[cols-1].get_legend_handles_labels()
-    axs[cols-1].legend(handles, ['5-fold CV accuracy', 'Test set accuracy'])
+    handles, labels = axs[cols - 1].get_legend_handles_labels()
+    axs[cols - 1].legend(handles, ['5-fold CV accuracy', 'Test set accuracy'])
     plt.show()
 
     if not FLAGS.debug:
-        fig.savefig('semi_supervised_{}.png'.format('TFIDF' if FLAGS.emb_method == 'tfidf' else 'GloVe'))
-        fig.savefig('semi_supervised_{}.pdf'.format('TFIDF' if FLAGS.emb_method == 'tfidf' else 'GloVe'))
+        fig.savefig('joint_classification_{}.png'.format('TFIDF' if FLAGS.emb_method == 'tfidf' else 'GloVe'))
+        fig.savefig('joint_classification_{}.pdf'.format('TFIDF' if FLAGS.emb_method == 'tfidf' else 'GloVe'))
 
 
 if __name__ == '__main__':

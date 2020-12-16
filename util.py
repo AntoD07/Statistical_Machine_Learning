@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import scipy
-#import util
+import pandas as pd
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity, pairwise_distances
@@ -15,6 +15,9 @@ FLAGS = flags.FLAGS
 def get_distributed_review_embeddings(data, vectorizer, embeddings):
     tf_idf_rep = get_tf_idf_review_embeddings(data, vectorizer)
 
+    if tf_idf_rep == None:
+        return None
+
     review_embs = []
     for row in tf_idf_rep:
         row = torch.tensor(np.array(row.todense())).type(torch.float32)
@@ -27,6 +30,9 @@ def get_distributed_review_embeddings(data, vectorizer, embeddings):
 
 def get_tf_idf_review_embeddings(data, vectorizer):
     """Note that this returns a sparse matrix in the csr format"""
+    if len(data) == 0:
+        return None
+
     tf_idf_rep = vectorizer.transform(data['review'])
 
     return tf_idf_rep
@@ -40,11 +46,17 @@ def get_tf_idf_vectorizer(data, vocabulary):
                                  norm='l2',
                                  vocabulary=vocabulary)
 
+    if type(data) == tuple:
+        if len(data[1]) == 0:
+            data = data[0]
+        else:
+            data = pd.concat([data[0][['review']], data[1][['review']]])
+
     vectorizer.fit(data['review'])
 
     return vectorizer
 
-def get_weight_matrix(X1, X2, t= 0.03):
+def get_weight_matrix(X1, X2, t=0.03):
     """T is a temperature parameter, which is fixed to 0.03 in the paper
     (but actually should be a hyper-parameter)"""
     cosine_sim = cosine_similarity(X1, X2, True)
@@ -54,7 +66,6 @@ def get_weight_matrix(X1, X2, t= 0.03):
         assert np.allclose(cosine_sim, cosine_sim2)
 
     dist = - (1 - cosine_sim) * 1/t
-   #dist = (1 + cosine_sim) * 1/2
 
     # Prevent over/underflow
     dist[dist < -25] = -25
@@ -62,8 +73,6 @@ def get_weight_matrix(X1, X2, t= 0.03):
 
     dist = np.exp(dist)
     return dist
-
-
 
 def labelize1(D_uu, W_uu, W_ul, labeled_nodes):
     #Version 1 :
@@ -111,9 +120,6 @@ def prediction(X_l, X_u, labeled_out, groundtruth):
     output_labels = label_spread.transduction_
     true_labels = np.concatenate((labeled_out, groundtruth))
     print("Accuracy = ", accuracy(output_labels, true_labels, n_l))
-    
-  
-    
 
 def visualize_top_k(embs, data, idx=0, k=3):
     X1, X2 = embs

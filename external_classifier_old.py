@@ -21,7 +21,6 @@ flags.DEFINE_integer('word_emb_dims', 300, 'dimensionality of word embeddings (5
 
 FLAGS = flags.FLAGS
 
-
 def train_and_evaluate_random_forest_classifier(train_X, train_Y, test_X, test_Y):
     clf_rf = RandomForestClassifier()
     clf_rf.fit(train_X, train_Y)
@@ -33,7 +32,7 @@ def _main():
     FLAGS = flags.FLAGS
 
     data = data_module.get_data()
-    train_data, test_data = data_module.get_train_test_split(data)
+    train_data, test_data, _ = data_module.get_train_test_split(data)
 
     if FLAGS.debug:
         # Test reproducibility
@@ -51,11 +50,11 @@ def _main():
     train_Y = train_data[0]['label']
     test_Y = test_data['label']
 
-    # Word Embeddings + RandomForest
-    train_X = util.get_distributed_review_embeddings(train_data[0], vectorizer, embeddings)
-    test_X = util.get_distributed_review_embeddings(test_data, vectorizer, embeddings)
-    acc_word_embeddings = train_and_evaluate_random_forest_classifier(train_X, train_Y, test_X, test_Y)
-    print("Accuracy (word embeddings): {} %".format(acc_word_embeddings))
+    # # Word Embeddings + RandomForest
+    # train_X = util.get_distributed_review_embeddings(train_data[0], vectorizer, embeddings)
+    # test_X = util.get_distributed_review_embeddings(test_data, vectorizer, embeddings)
+    # acc_word_embeddings = train_and_evaluate_random_forest_classifier(train_X, train_Y, test_X, test_Y)
+    # print("Accuracy (word embeddings): {} %".format(acc_word_embeddings))
 
     # TF-IDF + RandomForest
     train_X = util.get_tf_idf_review_embeddings(train_data[0], vectorizer)
@@ -64,7 +63,7 @@ def _main():
     print("Accuracy (TF-IDF features): {} %".format(acc_word_embeddings))
 
 def main(args):
-    for pld in [0.5, 1]:
+    for pld in [1]:
         FLAGS.portion_of_labeled_training_data = pld
         _main()
         print("")

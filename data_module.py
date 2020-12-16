@@ -7,35 +7,30 @@ import numpy as np
 
 FLAGS = flags.FLAGS
 
-def test():
-    if FLAGS.debug:
-        print("DEBUG")
-    else:
-        print("NOT DEBUG")
-
 def get_n_train_samples():
     if FLAGS.debug:
-        return 20
+        return 80
 
     return FLAGS.n_train_samples
 
 def get_n_test_samples():
     if FLAGS.debug:
-        return 10
+        return 40
 
     return FLAGS.n_test_samples
 
 def get_data():
     data = pd.read_csv("IMDB Dataset.csv")
+
     # Data set is given by "description of the impression" , sentiment = {positive,negative}
     data['label'] = data['sentiment'].map({'positive': 1, 'negative': 0})
     data['label'] = data['label'].astype('int')
 
     return data
 
-def get_train_test_split(data, verbose=True): #Maybe we can add the seed here 
-    n_train_samples = get_n_train_samples() #fct defined in util.py
-    n_test_samples = get_n_test_samples() #fct defined in util
+def get_train_test_split(data, verbose=True, random_seed=111):
+    n_train_samples = get_n_train_samples()
+    n_test_samples = get_n_test_samples()
 
     if verbose:
         print("Number of train samples:", n_train_samples)
@@ -58,8 +53,8 @@ def get_train_test_split(data, verbose=True): #Maybe we can add the seed here
     if verbose:
         print("Number of labeled training samples:", n_labeled_train)
 
-    random.seed(111)
-    np.random.seed(111)
+    random.seed(random_seed)
+    np.random.seed(random_seed)
 
     # === Sample test data ===
     pos_idxs = random.sample(range(len(pos_data)), n_pos_test)#samples n_pos_test number of indices 
